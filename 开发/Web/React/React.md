@@ -274,7 +274,7 @@ ReactDOM.render(<MyComponent/>, document.getElementById('test'))
 
 - 用于存储组件内部的数据
 
-![image-20220625121518011](C:\my-note\开发\Web\React\media\image-20220625121518011.png)
+![image-20220625121518011](media\image-20220625121518011.png)
 
 ```js
 <script type="text/babel">
@@ -483,7 +483,7 @@ ReactDOM.render(<MyComponent/>, document.getElementById('test'))
 </script>
 ```
 
-![image-20220625133822715](C:\my-note\开发\Web\React\media\image-20220625133822715.png)
+![image-20220625133822715](media\image-20220625133822715.png)
 
 
 
@@ -754,7 +754,7 @@ ref={c => this.input1=c}
 
 **麻烦 但是React推荐**
 
-![image-20220625181946739](C:\my-note\开发\Web\React\media\image-20220625181946739.png)
+![image-20220625181946739](media\image-20220625181946739.png)
 
 ```js
 <script type="text/babel">
@@ -1046,7 +1046,7 @@ js红宝书600页
 
 ### 5.1 生命周期(旧)
 
-![image-20220627214547715](C:\my-note\开发\Web\React\media\image-20220627214547715.png)
+![image-20220627214547715](media\image-20220627214547715.png)
 
 #### 5.1.1 挂载流程
 
@@ -1284,7 +1284,7 @@ js红宝书600页
 
 ### 5.2 生命周期(新)
 
-![image-20220627214616669](C:\my-note\开发\Web\React\media\image-20220627214616669.png)
+![image-20220627214616669](media\image-20220627214616669.png)
 
 ##### getDerivedStateFromProps
 
@@ -1388,7 +1388,7 @@ js红宝书600页
 
 > 案例
 
-![image-20220627231843188](C:\my-note\开发\Web\React\media\image-20220627231843188.png)
+![image-20220627231843188](media\image-20220627231843188.png)
 
 - 新闻 每秒在头部多一个
 - 滑动滑块后, 页面就静止, 新闻数继续增加
