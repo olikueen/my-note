@@ -470,7 +470,7 @@ pipeline {
 - vars 目录托管脚本文件, 这些脚本在"管道"中作为变量公开;
 - resources 目录允许 libraryResource 从外部库中使用步骤来加载相关联的非 groovy 文件;
 
-![image-20221130232811741](C:\my-note\CICD\media\image-20221130232811741.png)
+![image-20221130232811741](media\image-20221130232811741.png)
 
 ### 1.3.1 sharelibrary 的使用
 
@@ -531,11 +531,11 @@ pipeline {
 
   - 使用Jenkinsfile
 
-     ![image-20221201003058415](C:\my-note\CICD\media\image-20221201003058415.png)
+     ![image-20221201003058415](media\image-20221201003058415.png)
 
     在item中配置Jenkinsfile
 
-    ![image-20221201003226878](C:\my-note\CICD\media\image-20221201003226878.png)
+    ![image-20221201003226878](media\image-20221201003226878.png)
 
 ### 1.3.2 实践: 日志颜色输出
 
