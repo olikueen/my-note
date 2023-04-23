@@ -75,7 +75,7 @@ rpm --import https://mirrors.aliyun.com/kubernetes/yum/doc/rpm-package-key.gpg
 
 ### 在所有服务器安装docker
 ```
-yum -y install docker-ce-19.03.7
+yum -y install docker-ce-20.10.1
 
 # 配置docker加速器
 mkdir -p /etc/docker
