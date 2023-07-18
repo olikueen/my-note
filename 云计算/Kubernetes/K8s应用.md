@@ -198,7 +198,7 @@ metadata:
     pv.kubernetes.io/bound-by-controller: 'yes'
   finalizers:
     - kubernetes.io/pv-protection
-  name: nfs-pv-nfs-storage
+  name: nfs1-pv-nfs-storage
   resourceVersion: '2492'
 spec:
   accessModes:

@@ -147,7 +147,7 @@ ReactDOM.render(VDOM, document.getElementById('test'))
     - 若小写字母开头，则将该标签转为html中同名元素；若html中无该标签对应同名元素，则报错
     - 若大写字母开头，react就去渲染对应的组件，若组件没有定义则报错
 
-### 2.2 练习
+### 2.2 迭代语法
 
 ![image-20220624202757427](media/image-20220624202757427.png)
 
@@ -1482,6 +1482,16 @@ js红宝书600页
 - 启动项目：npm start
 
 <React.StrictMode> 检查代码中不合理的地方
+
+
+
+```bash
+npx create-react-app <项目名>
+
+npx create vite@latest <项目名> [vue, vue-ts, react, react-ts]
+```
+
+
 
 
 
