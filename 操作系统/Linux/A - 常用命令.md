@@ -171,3 +171,9 @@ Client
 git clone root@192.168.0.111:/home/dev/src/test
 ```
 
+### Shell 美化
+
+```bash
+export PS1="\[\e[32;1m\][\[\e[33;1m\]\u\[\e[31;1m\]@\[\e[33;1m\]\h \[\e[36;1m\]\w\[\e[32;1m\]]\[\e[34;1m\]\$ \[\e[0m\]"
+```
+

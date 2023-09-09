@@ -120,9 +120,7 @@ sudo systemctl restart containerd
 
 > 文档: https://github.com/cri-o/cri-o/blob/main/install.md#readme
 
-
-
-### 部署kubernetes
+## Kubeadm 部署 kubernetes
 
 ```bash
 # 配置 aliyun k8s yum 源
@@ -162,5 +160,345 @@ kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/
 ctr -n k8s.io c ls
 ```
 
+## 二进制安装 Kubenetes
 
+### 手动生成证书
+
+```shell
+mkdir ssl && cd ssl
+
+# 1. 生成一个 2048 位的 ca.key 文件
+openssl genrsa -out ca.key 2048
+# 2. 在 ca.key 文件的基础上，生成 ca.crt 文件（用参数 -days 设置证书有效期）
+openssl req -x509 -new -nodes -key ca.key -subj "/CN=192.168.3.201" -days 10000 -out ca.crt
+
+# 3. 生成一个 2048 位的 server.key 文件
+openssl genrsa -out server.key 2048
+
+# 4. 创建一个用于生成证书签名请求（CSR）的配置文件。
+cat <<EOF>>csr.conf
+[ req ]
+default_bits = 2048
+prompt = no
+default_md = sha256
+req_extensions = req_ext
+distinguished_name = dn
+
+[ dn ]
+C = CN
+ST = BJ
+L = BJ
+O = k8s
+OU = system
+CN = 192.168.3.201
+
+[ req_ext ]
+subjectAltName = @alt_names
+
+[ alt_names ]
+DNS.1 = kubernetes
+DNS.2 = kubernetes.default
+DNS.3 = kubernetes.default.svc
+DNS.4 = kubernetes.default.svc.cluster
+DNS.5 = kubernetes.default.svc.cluster.local
+IP.1 = 192.168.3.201
+IP.2 = 192.168.3.201
+
+[ v3_ext ]
+authorityKeyIdentifier=keyid,issuer:always
+basicConstraints=CA:FALSE
+keyUsage=keyEncipherment,dataEncipherment
+extendedKeyUsage=serverAuth,clientAuth
+subjectAltName=@alt_names
+EOF
+
+# 5. 基于上面的配置文件生成证书签名请求
+openssl req -new -key server.key -out server.csr -config csr.conf
+
+# 6. 基于 ca.key、ca.crt 和 server.csr 等三个文件生成服务端证书
+openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key \
+    -CAcreateserial -out server.crt -days 10000 \
+    -extensions v3_ext -extfile csr.conf -sha256
+
+# 7. 查看证书签名请求
+openssl req  -noout -text -in ./server.csr
+
+# 8. 查看证书
+openssl x509  -noout -text -in ./server.crt
+```
+
+```shell
+curl -L https://github.com/cloudflare/cfssl/releases/download/v1.5.0/cfssl_1.5.0_linux_amd64 -o cfssl
+chmod +x cfssl
+curl -L https://github.com/cloudflare/cfssl/releases/download/v1.5.0/cfssljson_1.5.0_linux_amd64 -o cfssljson
+chmod +x cfssljson
+curl -L https://github.com/cloudflare/cfssl/releases/download/v1.5.0/cfssl-certinfo_1.5.0_linux_amd64 -o cfssl-certinfo
+chmod +x cfssl-certinfo
+```
+
+```shell
+mkdir pki
+cd pki
+cat > admin-csr.json << EOF 
+{
+  "CN": "admin",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "CN",
+      "ST": "Beijing",
+      "L": "Beijing",
+      "O": "system:masters",
+      "OU": "Kubernetes-manual"
+    }
+  ]
+}
+EOF
+
+cat > ca-config.json << EOF 
+{
+  "signing": {
+    "default": {
+      "expiry": "876000h"
+    },
+    "profiles": {
+      "kubernetes": {
+        "usages": [
+            "signing",
+            "key encipherment",
+            "server auth",
+            "client auth"
+        ],
+        "expiry": "876000h"
+      }
+    }
+  }
+}
+EOF
+
+cat > etcd-ca-csr.json  << EOF 
+{
+  "CN": "etcd",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "CN",
+      "ST": "Beijing",
+      "L": "Beijing",
+      "O": "etcd",
+      "OU": "Etcd Security"
+    }
+  ],
+  "ca": {
+    "expiry": "876000h"
+  }
+}
+EOF
+
+cat > front-proxy-ca-csr.json  << EOF 
+{
+  "CN": "kubernetes",
+  "key": {
+     "algo": "rsa",
+     "size": 2048
+  },
+  "ca": {
+    "expiry": "876000h"
+  }
+}
+EOF
+
+cat > kubelet-csr.json  << EOF 
+{
+  "CN": "system:node:\$NODE",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "CN",
+      "L": "Beijing",
+      "ST": "Beijing",
+      "O": "system:nodes",
+      "OU": "Kubernetes-manual"
+    }
+  ]
+}
+EOF
+
+cat > manager-csr.json << EOF 
+{
+  "CN": "system:kube-controller-manager",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "CN",
+      "ST": "Beijing",
+      "L": "Beijing",
+      "O": "system:kube-controller-manager",
+      "OU": "Kubernetes-manual"
+    }
+  ]
+}
+EOF
+
+cat > apiserver-csr.json << EOF 
+{
+  "CN": "kube-apiserver",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "CN",
+      "ST": "Beijing",
+      "L": "Beijing",
+      "O": "Kubernetes",
+      "OU": "Kubernetes-manual"
+    }
+  ]
+}
+EOF
+
+
+cat > ca-csr.json   << EOF 
+{
+  "CN": "kubernetes",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "CN",
+      "ST": "Beijing",
+      "L": "Beijing",
+      "O": "Kubernetes",
+      "OU": "Kubernetes-manual"
+    }
+  ],
+  "ca": {
+    "expiry": "876000h"
+  }
+}
+EOF
+
+cat > etcd-csr.json << EOF 
+{
+  "CN": "etcd",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "CN",
+      "ST": "Beijing",
+      "L": "Beijing",
+      "O": "etcd",
+      "OU": "Etcd Security"
+    }
+  ]
+}
+EOF
+
+
+cat > front-proxy-client-csr.json  << EOF 
+{
+  "CN": "front-proxy-client",
+  "key": {
+     "algo": "rsa",
+     "size": 2048
+  }
+}
+EOF
+
+
+cat > kube-proxy-csr.json  << EOF 
+{
+  "CN": "system:kube-proxy",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "CN",
+      "ST": "Beijing",
+      "L": "Beijing",
+      "O": "system:kube-proxy",
+      "OU": "Kubernetes-manual"
+    }
+  ]
+}
+EOF
+
+
+cat > scheduler-csr.json << EOF 
+{
+  "CN": "system:kube-scheduler",
+  "key": {
+    "algo": "rsa",
+    "size": 2048
+  },
+  "names": [
+    {
+      "C": "CN",
+      "ST": "Beijing",
+      "L": "Beijing",
+      "O": "system:kube-scheduler",
+      "OU": "Kubernetes-manual"
+    }
+  ]
+}
+EOF
+```
+
+```shell
+wget https://github.com/etcd-io/etcd/releases/download/v3.5.6/etcd-v3.5.6-linux-amd64.tar.gz
+
+wget https://cdn.dl.k8s.io/release/v1.26.8/kubernetes-node-linux-amd64.tar.gz
+wget https://cdn.dl.k8s.io/release/v1.26.8/kubernetes-server-linux-amd64.tar.gz
+wget https://cdn.dl.k8s.io/release/v1.26.8/kubernetes-client-linux-amd64.tar.gz
+```
+
+> master
+
+```shell
+mkdir -pv /opt/etcd/bin
+tar -xvf etcd-v3.5.6-linux-amd64.tar.gz
+
+mv -v etcd-v3.5.6-linux-amd64/etcd* /opt/etcd/bin/
+```
+
+```shell
+mkdir -pv /opt/kubernetes/bin
+
+tar -xf kubernetes-server-linux-amd64.tar.gz
+cd kubernetes/server/bin/
+
+mv -v kubectl kube-apiserver kube-scheduler kube-controller-manager kube-proxy /opt/kubernetes/bin/
+```
+
+> node
+
+```shell
+mkdir -pv /opt/kubernetes/bin
+
+tar -xf kubernetes-node-linux-amd64.tar.gz
+cd kubernetes/node/bin/
+
+mv -v kubelet kube-proxy /opt/kubernetes/bin/
+```
 
