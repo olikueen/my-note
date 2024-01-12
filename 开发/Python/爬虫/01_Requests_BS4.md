@@ -120,7 +120,7 @@ find()方法只返回一个tag；
 
 #### 3 selector() 方法
 ```
-soup.selector(div.item > a > h1)   #括号内容通过Chrome复制得到
+soup.select('div.item > a > h1')   #括号内容通过Chrome复制得到
 ```
 该方法类似于中国>湖南省>长沙市， 从大到小，提取需要的信息，这种方式可以通过Chrome复制得到：
 - 鼠标定位到想要提取的数据位置， 右击， 在弹出的快捷菜单中选择“检查”命令；

@@ -54,7 +54,7 @@ git push origin dev    # 推送本地
 
 ```bash
 cmd
-set HTTP_PROXY=http://127.0.0.1:58591
-set HTTPS_PROXY=http://127.0.0.1:58591
+set HTTP_PROXY=http://127.0.0.1:7890
+set HTTPS_PROXY=http://127.0.0.1:7890
 git push origin master
 ```

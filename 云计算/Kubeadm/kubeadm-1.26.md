@@ -1,3 +1,5 @@
+[toc]
+
 
 ```
 cat <<EOF >> /etc/hosts
@@ -85,6 +87,13 @@ wget https://raw.githubusercontent.com/containerd/containerd/main/containerd.ser
 systemctl daemon-reload
 systemctl enable containerd
 
+# 列出容器
+/usr/local/bin/ctr -n k8s.io c ls
+# 列出镜像
+/usr/local/bin/ctr -n k8s.io i ls
+```
+
+```bash
 # 安装 runc, conitanerd 安装包中不包含runc, 需要手动安装
 # 下载 runc.amd64文件, https://github.com/opencontainers/runc/releases
 install -m 755 runc.amd64 /usr/local/sbin/runc
@@ -160,7 +169,7 @@ kubectl apply -f https://github.com/flannel-io/flannel/releases/latest/download/
 ctr -n k8s.io c ls
 ```
 
-## 二进制安装 Kubenetes
+## 二进制安装 Kubernetes
 
 ### 手动生成证书
 
@@ -234,235 +243,186 @@ curl -L https://github.com/cloudflare/cfssl/releases/download/v1.5.0/cfssljson_1
 chmod +x cfssljson
 curl -L https://github.com/cloudflare/cfssl/releases/download/v1.5.0/cfssl-certinfo_1.5.0_linux_amd64 -o cfssl-certinfo
 chmod +x cfssl-certinfo
+
+mkdir ~/bin
+mv -v cfssl* ~/bin/
 ```
 
 ```shell
-mkdir pki
-cd pki
-cat > admin-csr.json << EOF 
+#!/bin/bash
+# certificate.sh
+mkdir /root/ssl && cd /root/ssl
+cat > ca-config.json <<EOF
 {
-  "CN": "admin",
-  "key": {
-    "algo": "rsa",
-    "size": 2048
-  },
-  "names": [
-    {
-      "C": "CN",
-      "ST": "Beijing",
-      "L": "Beijing",
-      "O": "system:masters",
-      "OU": "Kubernetes-manual"
+    "signing": {
+        "default": {
+            "expiry": "87600h"
+        },
+        "profiles": {
+            "kubernetes": {
+                "expiry": "87600h",
+                "usages": [
+                    "signing",
+                    "key encipherment",
+                    "server auth",
+                    "client auth"
+                ]
+            }
+        },
+        "kcfg": {
+            "usages": [
+                "signing",
+                "key encipherment",
+                "client auth"
+            ],
+            "expiry": "87600h"
+        }
     }
-  ]
 }
 EOF
 
-cat > ca-config.json << EOF 
+
+# --------------------------------------------------
+# 生成ca.pem ca-key.pem
+# --------------------------------------------------
+cat > ca-csr.json <<EOF
 {
-  "signing": {
-    "default": {
-      "expiry": "876000h"
+    "CN": "kubernetes",
+    "key": {
+        "algo": "rsa",
+        "size": 2048
     },
-    "profiles": {
-      "kubernetes": {
-        "usages": [
-            "signing",
-            "key encipherment",
-            "server auth",
-            "client auth"
-        ],
-        "expiry": "876000h"
-      }
-    }
-  }
+    "names": [
+        {
+            "C": "CN",
+            "L": "Beijing",
+            "ST": "Beijing",
+            "O": "k8s",
+            "OU": "System"
+        }
+    ]
 }
 EOF
 
-cat > etcd-ca-csr.json  << EOF 
+cfssl gencert -initca ca-csr.json | cfssljson -bare ca -
+
+
+# --------------------------------------------------
+# 生成 server.pem server-key.pem
+# 配置说明:
+# 集群节点IP: "192.168.30.130", "192.168.30.131", "192.168.30.132"
+# kubernetes服务ip: "10.1.0.1", 一般是 kue-apiserver 指定的 service-cluster-ip-range 网段的第一个IP
+# 集群域名: "kubernetes*"
+# --------------------------------------------------
+cat > server-csr.json <<EOF
 {
-  "CN": "etcd",
-  "key": {
-    "algo": "rsa",
-    "size": 2048
-  },
-  "names": [
-    {
-      "C": "CN",
-      "ST": "Beijing",
-      "L": "Beijing",
-      "O": "etcd",
-      "OU": "Etcd Security"
-    }
-  ],
-  "ca": {
-    "expiry": "876000h"
-  }
+    "CN": "kubernetes",
+    "hosts": [
+        "127.0.0.1",
+		"192.168.3.201",
+        "10.0.0.1",
+        "kubernetes",
+        "kubernetes.default",
+        "kubernetes.default.svc",
+        "kubernetes.default.svc.cluster",
+        "kubernetes.default.svc.cluster.local"
+    ],
+    "key": {
+        "algo": "rsa",
+        "size": 2048
+    },
+    "names": [
+        {
+            "C": "CN",
+            "L": "Beijing",
+            "ST": "Beijing",
+            "O": "k8s",
+            "OU": "System"
+        }
+    ]
 }
 EOF
 
-cat > front-proxy-ca-csr.json  << EOF 
+cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes server-csr.json | cfssljson -bare server
+
+
+# --------------------------------------------------
+# 生成admin.pem admin-key.pem
+# 用于集群管路员访问管理集群
+# --------------------------------------------------
+cat > admin-csr.json <<EOF
 {
-  "CN": "kubernetes",
-  "key": {
-     "algo": "rsa",
-     "size": 2048
-  },
-  "ca": {
-    "expiry": "876000h"
-  }
+    "CN": "admin",
+    "key": {
+        "algo": "rsa",
+        "size": 2048
+    },
+    "names": [
+        {
+            "C": "CN",
+            "L": "Beijing",
+            "ST": "Beijing",
+            "O": "system:master",
+            "OU": "System"
+        }
+    ]
 }
 EOF
 
-cat > kubelet-csr.json  << EOF 
+cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes admin-csr.json | cfssljson -bare admin
+
+
+# --------------------------------------------------
+# 生成kube-proxy.pem kube-proxy-key-key.pem
+# 用于集群管路员访问管理集群
+# --------------------------------------------------
+cat > kube-proxy-csr.json <<EOF
 {
-  "CN": "system:node:\$NODE",
-  "key": {
-    "algo": "rsa",
-    "size": 2048
-  },
-  "names": [
-    {
-      "C": "CN",
-      "L": "Beijing",
-      "ST": "Beijing",
-      "O": "system:nodes",
-      "OU": "Kubernetes-manual"
-    }
-  ]
+    "CN": "system:kube-proxy",
+    "hosts": [],
+    "key": {
+        "algo": "rsa",
+        "size": 2048
+    },
+    "names": [
+        {
+            "C": "CN",
+            "L": "Beijing",
+            "ST": "Beijing",
+            "O": "k8s",
+            "OU": "System"
+        }
+    ]
 }
 EOF
 
-cat > manager-csr.json << EOF 
+cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes kube-proxy-csr.json | cfssljson -bare kube-proxy
+
+# --------------------------------------------------
+# 生成aggregator-proxy.pem aggregator-proxy-key.pem
+# 用于配置apiserver proxy-client参数
+# --------------------------------------------------
+cat > aggregator-proxy-csr.json <<EOF
 {
-  "CN": "system:kube-controller-manager",
-  "key": {
-    "algo": "rsa",
-    "size": 2048
-  },
-  "names": [
-    {
-      "C": "CN",
-      "ST": "Beijing",
-      "L": "Beijing",
-      "O": "system:kube-controller-manager",
-      "OU": "Kubernetes-manual"
-    }
-  ]
+    "CN": "system:aggregator-proxy",
+    "hosts": [],
+    "key": {
+        "algo": "rsa",
+        "size": 2048
+    },
+    "names": [
+        {
+            "C": "CN",
+            "L": "Beijing",
+            "ST": "Beijing",
+            "O": "k8s",
+            "OU": "System"
+        }
+    ]
 }
 EOF
 
-cat > apiserver-csr.json << EOF 
-{
-  "CN": "kube-apiserver",
-  "key": {
-    "algo": "rsa",
-    "size": 2048
-  },
-  "names": [
-    {
-      "C": "CN",
-      "ST": "Beijing",
-      "L": "Beijing",
-      "O": "Kubernetes",
-      "OU": "Kubernetes-manual"
-    }
-  ]
-}
-EOF
-
-
-cat > ca-csr.json   << EOF 
-{
-  "CN": "kubernetes",
-  "key": {
-    "algo": "rsa",
-    "size": 2048
-  },
-  "names": [
-    {
-      "C": "CN",
-      "ST": "Beijing",
-      "L": "Beijing",
-      "O": "Kubernetes",
-      "OU": "Kubernetes-manual"
-    }
-  ],
-  "ca": {
-    "expiry": "876000h"
-  }
-}
-EOF
-
-cat > etcd-csr.json << EOF 
-{
-  "CN": "etcd",
-  "key": {
-    "algo": "rsa",
-    "size": 2048
-  },
-  "names": [
-    {
-      "C": "CN",
-      "ST": "Beijing",
-      "L": "Beijing",
-      "O": "etcd",
-      "OU": "Etcd Security"
-    }
-  ]
-}
-EOF
-
-
-cat > front-proxy-client-csr.json  << EOF 
-{
-  "CN": "front-proxy-client",
-  "key": {
-     "algo": "rsa",
-     "size": 2048
-  }
-}
-EOF
-
-
-cat > kube-proxy-csr.json  << EOF 
-{
-  "CN": "system:kube-proxy",
-  "key": {
-    "algo": "rsa",
-    "size": 2048
-  },
-  "names": [
-    {
-      "C": "CN",
-      "ST": "Beijing",
-      "L": "Beijing",
-      "O": "system:kube-proxy",
-      "OU": "Kubernetes-manual"
-    }
-  ]
-}
-EOF
-
-
-cat > scheduler-csr.json << EOF 
-{
-  "CN": "system:kube-scheduler",
-  "key": {
-    "algo": "rsa",
-    "size": 2048
-  },
-  "names": [
-    {
-      "C": "CN",
-      "ST": "Beijing",
-      "L": "Beijing",
-      "O": "system:kube-scheduler",
-      "OU": "Kubernetes-manual"
-    }
-  ]
-}
-EOF
+cfssl gencert -ca=ca.pem -ca-key=ca-key.pem -config=ca-config.json -profile=kubernetes aggregator-proxy-csr.json | cfssljson -bare aggregator-proxy
 ```
 
 ```shell
@@ -475,12 +435,72 @@ wget https://cdn.dl.k8s.io/release/v1.26.8/kubernetes-client-linux-amd64.tar.gz
 
 > master
 
+### 单节点 etcd
+
 ```shell
 mkdir -pv /opt/etcd/bin
 tar -xvf etcd-v3.5.6-linux-amd64.tar.gz
 
-mv -v etcd-v3.5.6-linux-amd64/etcd* /opt/etcd/bin/
+cp -v etcd-v3.5.6-linux-amd64/etcd* /opt/etcd/bin/
+
+mkdir /opt/ssl
+cp -v ~/ssl/server.pem ~/ssl/server-key.pem /opt/ssl
+cp -v ~/ssl/ca.pem ~/ssl/ca-key.pem /opt/ssl
+
+cat <<EOF >> /usr/lib/systemd/system/etcd.service
+[Unit]
+Description=Etcd Server
+After=network.target
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=notify
+ExecStart=/opt/etcd/bin/etcd \\
+--advertise-client-urls=https://192.168.3.201:2379 \\
+--client-cert-auth=true \\
+--cert-file=/opt/ssl/server.pem \\
+--key-file=/opt/ssl/server-key.pem \\
+--peer-client-cert-auth=true \\
+--peer-cert-file=/opt/ssl/server.pem \\
+--peer-key-file=/opt/ssl/server-key.pem \\
+--trusted-ca-file=/opt/ssl/ca.pem \\
+--peer-trusted-ca-file=/opt/ssl/ca.pem \\
+--data-dir=/var/lib/etcd \\
+--experimental-initial-corrupt-check=true \\
+--experimental-watch-progress-notify-interval=5s \\
+--initial-advertise-peer-urls=https://192.168.3.201:2380 \\
+--initial-cluster=k8s-master=https://192.168.3.201:2380 \\
+--listen-client-urls=https://127.0.0.1:2379,https://192.168.3.201:2379 \\
+--listen-metrics-urls=http://127.0.0.1:2381 \\
+--listen-peer-urls=https://192.168.3.201:2380 \\
+--name=k8s-master \\
+--snapshot-count=10000
+Restart=on-failure
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable etcd
+systemctl restart etcd
 ```
+
+检查etcd集群状态
+
+```
+/opt/etcd/bin/etcdctl \
+--cacert=/opt/ssl/ca.pem \
+--cert=/opt/ssl/server.pem \
+--key=/opt/ssl/server-key.pem \
+--endpoints="https://192.168.3.201:2379" \
+--write-out=table \
+endpoint status 
+```
+
+### kube-apiserver
 
 ```shell
 mkdir -pv /opt/kubernetes/bin
@@ -488,8 +508,124 @@ mkdir -pv /opt/kubernetes/bin
 tar -xf kubernetes-server-linux-amd64.tar.gz
 cd kubernetes/server/bin/
 
-mv -v kubectl kube-apiserver kube-scheduler kube-controller-manager kube-proxy /opt/kubernetes/bin/
+cp -v kubectl kube-apiserver kube-scheduler kube-controller-manager kube-proxy /opt/kubernetes/bin/
+
+cp -v ~/ssl/aggregator-proxy.pem ~/ssl/aggregator-proxy-key.pem /opt/ssl
 ```
+
+```bash
+cat <<EOF >/usr/lib/systemd/system/kube-apiserver.service
+[Unit]
+Description=Kubernetes API Server
+Documentation=https://github.com/kubernetes/kubernetes
+After=network.target
+
+[Service]
+ExecStart=/opt/kubernetes/bin/kube-apiserver \\
+--advertise-address=192.168.3.201 \\
+--allow-privileged=true \\
+--authorization-mode=Node,RBAC \\
+--client-ca-file=/opt/ssl/ca.pem \\
+--enable-admission-plugins=NodeRestriction \\
+--enable-bootstrap-token-auth=true \\
+--etcd-cafile=/opt/ssl/ca.pem \\
+--etcd-certfile=/opt/ssl/server.pem \\
+--etcd-keyfile=/opt/ssl/server-key.pem \\
+--etcd-servers=https://127.0.0.1:2379 \\
+--kubelet-client-certificate=/opt/ssl/server.pem \\
+--kubelet-client-key=/opt/ssl/server-key.pem \\
+--kubelet-preferred-address-types=InternalIP,ExternalIP,Hostname \\
+--proxy-client-cert-file=/opt/ssl/aggregator-proxy.pem \\
+--proxy-client-key-file=/opt/ssl/aggregator-proxy-key.pem \\
+--requestheader-allowed-names=front-proxy-client \\
+--requestheader-client-ca-file=/opt/ssl/ca.pem \\
+--requestheader-extra-headers-prefix=X-Remote-Extra- \\
+--requestheader-group-headers=X-Remote-Group \\
+--requestheader-username-headers=X-Remote-User \\
+--secure-port=6443 \\
+--service-account-issuer=https://kubernetes.default.svc.cluster.local \\
+--service-account-key-file=/opt/ssl/ca.pem \\
+--service-account-signing-key-file=/opt/ssl/ca-key.pem \\
+--service-cluster-ip-range=10.96.0.0/12
+--tls-cert-file=/opt/ssl/server.pem \\
+--tls-private-key-file=/opt/ssl/server-key.pem
+Restart=on-failure
+RestartSec=5
+Type=notify
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl enable kube-apiserver
+systemctl restart kube-apiserver
+```
+
+```bash
+# 生成 ~/.kube/config 配置文件
+/opt/kubernetes/bin/kubectl config set-cluster kubernetes --certificate-authority=ca.pem --embed-certs=true --server=127.0.0.1:8443
+/opt/kubernetes/bin/kubectl config set-credentials admin --client-certificate=admin.pem --embed-certs=true --client-key=admin-key.pem
+/opt/kubernetes/bin/kubectl config set-context kubernetes --cluster=kubernetes --user=admin
+/opt/kubernetes/bin/kubectl config use-context kubernetes
+
+# kube-proxy.kubeconfig
+/opt/kubernetes/bin/kubectl config set-cluster kubernetes --certificate-authority=ca.pem --embed-certs=true --server=127.0.0.1:8443 --kubeconfig=kube-proxy.kubeconfig
+/opt/kubernetes/bin/kubectl config set-credentials kube-proxy --client-certificate=kube-proxy.pem --embed-certs=true --client-key=kube-proxy-key.pem --kubeconfig=kube-proxy.kubeconfig
+/opt/kubernetes/bin/kubectl config set-context default --cluster=kubernetes --user=kube-proxy --kubeconfig=kube-proxy.kubeconfig
+/opt/kubernetes/bin/kubectl config use-context default --kubeconfig=kube-proxy.kubeconfig
+
+# kube-controller-manager.kubeconfig
+/opt/kubernetes/bin/kubectl config set-cluster kubernetes --certificate-authority=ca.pem --embed-certs=true --server=127.0.0.1:8443 --kubeconfig=kube-controller-manager.kubeconfig
+/opt/kubernetes/bin/kubectl config set-credentials kube-controller-manager --client-certificate=kube-proxy.pem --embed-certs=true --client-key=kube-proxy-key.pem --kubeconfig=kube-controller-manager.kubeconfig
+/opt/kubernetes/bin/kubectl config set-context default --cluster=kubernetes --user=kube-controller-manager --kubeconfig=kube-controller-manager.kubeconfig
+/opt/kubernetes/bin/kubectl config use-context default --kubeconfig=kube-controller-manager.kubeconfig
+
+```
+
+### kube-controller-manager
+
+```bash
+cat <<EOF > /usr/lib/systemd/system/kube-controller-manager.service
+[Unit]
+Description=Kubernetes Controller Manager
+Documentation=https://github.com/GoogleCloudPlatform/kubernetes
+
+[Service]
+ExecStart=/opt/kubernetes/bin/kube-controller-manager \\
+--allocate-node-cidrs=true \\
+--authentication-kubeconfig=/opt/kubernetes/etc/kube-controller-manager.kubeconfig \\
+--authorization-kubeconfig=/opt/kubernetes/etc/kube-controller-manager.kubeconfig \\
+--bind-address=127.0.0.1 \\
+--client-ca-file=/opt/ssl/ca.pem \\
+--cluster-cidr=10.244.0.0/16 \\
+--cluster-name=kubernetes \\
+--cluster-signing-cert-file=/opt/ssl/ca.pem \\
+--cluster-signing-key-file=/opt/ssl/ca-key.pem \\
+--controllers=*,bootstrapsigner,tokencleaner \\
+--kubeconfig=/opt/kubernetes/etc/controller-manager.conf \\
+--leader-elect=true \\
+--requestheader-client-ca-file=/opt/ssl/ca.pem \\
+--root-ca-file=/opt/ssl/ca.pem \\
+--service-account-private-key-file=/opt/ssl/ca-key.pem \\
+--service-cluster-ip-range=10.96.0.0/12 \\
+--use-service-account-credentials=true
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl daemon-reload
+systemctl start kube-controller-manager
+systemctl enable kube-controller-manager
+```
+
+### scheduler
+
+
 
 > node
 
