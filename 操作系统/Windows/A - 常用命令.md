@@ -24,3 +24,10 @@ C:\ProgramData\Microsoft\Windows\Start Menu\Programs\StartUp
 ```
 
 ![image-20230625161008577](media/image-20230625161008577.png)
+
+### Edge 还原页面提示
+
+管理员身份 notepad 打开 `C:\Users\用户名\AppData\Local\Microsoft\Edge\User Data\Default\Preferences`, 按Ctrl+F, 搜索exit_type这个关键词，之后将后面的值修改成Normal.
+
+修改后保存文件，并右键此文件，打开属性，勾上只读
+

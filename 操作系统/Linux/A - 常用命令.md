@@ -30,10 +30,10 @@ npm config set cache "C:\npm\node_cache"
 #添加 C:\npm\node_global\bin 添加到PATH中
 
 # 设置淘宝源
-npm config set registry https://registry.npm.taobao.org
+npm config set registry http://registry.npmmirror.com
 
 # 临时使用淘宝源
-npm --registry https://registry.npm.taobao.org install <package name>
+npm --registry http://registry.npmmirror.com install <package name>
 ```
 
 ### yarn
